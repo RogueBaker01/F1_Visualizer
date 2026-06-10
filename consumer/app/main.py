@@ -1,7 +1,9 @@
 import asyncio
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from app.connection import ConnectionManager
-
+from app.simulation import run_simulation_loop
+from app.schemas import ClientCommand
+from pydantic import ValidationError
 app = FastAPI(title="F1 Visualzer - Streaming service")
 manager = ConnectionManager()
 
