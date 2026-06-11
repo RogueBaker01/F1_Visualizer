@@ -30,3 +30,5 @@ class ConnectionManager:
     
     def get_state(self, client_id: str) -> dict:
         return self.active_connections[client_id]["state"]
+        
+manager = ConnectionManager()
