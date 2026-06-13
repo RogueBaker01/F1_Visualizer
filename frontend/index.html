@@ -1,68 +1,158 @@
 <!DOCTYPE html>
 <html lang="es">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>F1 Visualizer — GP Bahréin 2023</title>
+    <title>F1 Visualizer</title>
+    <meta name="description" content="Visualizador de telemetría F1 en tiempo real — temporadas 2020-2026">
     <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Roboto+Mono:wght@500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;900&family=Roboto+Mono:wght@400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/styles.css">
 </head>
-
 <body>
-    <div class="dashboard">
 
-        <!-- LEFT: Controls -->
-        <aside class="sidebar controls-panel">
-            <div class="sidebar-header">
-                <span class="f1-badge">F1</span>
-                <h2>GP Bahréin 2023</h2>
-            </div>
-
-            <div class="control-group">
-                <button id="btn-load">⟳ Recargar carrera</button>
-            </div>
-            <div class="control-group btn-row">
-                <button id="btn-play" class="btn-primary">▶ Play</button>
-                <button id="btn-pause" class="btn-secondary">⏸ Pause</button>
-            </div>
-            <div class="control-group">
-                <label for="sel-speed">Velocidad</label>
-                <select id="sel-speed">
-                    <option value="1">1× — Tiempo real</option>
-                    <option value="5">5×</option>
-                    <option value="10">10×</option>
-                    <option value="30">30×</option>
-                </select>
-            </div>
-            <div class="control-group">
-                <label for="seek-slider">Posición en carrera</label>
-                <input type="range" id="seek-slider" min="0" max="100" value="0">
-            </div>
-            <div class="timer-display">
-                <span class="timer-label">TIEMPO</span>
-                <span id="time-display">00:00:00</span>
-            </div>
-        </aside>
-
-        <!-- CENTER: Track -->
-        <main class="track-area">
-            <svg id="track-svg" viewBox="0 0 1000 1000" preserveAspectRatio="xMidYMid meet">
-            </svg>
-        </main>
-
-        <!-- RIGHT: Standings -->
-        <aside class="sidebar standings-panel">
-            <div class="sidebar-header">
-                <h2>Equipos &amp; Pilotos</h2>
-            </div>
-            <div id="standings-body" class="standings-body"></div>
-        </aside>
-
+<!-- ══════════════════════════════════════════════════════════════════════════
+     SCREEN 1: Race Selector
+════════════════════════════════════════════════════════════════════════════ -->
+<div id="selector-screen" class="screen">
+    <div class="selector-bg">
+        <div class="selector-orb orb1"></div>
+        <div class="selector-orb orb2"></div>
+        <div class="selector-orb orb3"></div>
     </div>
-    <script src="js/renderer.js"></script>
-    <script src="js/websocket.js"></script>
-</body>
 
+    <header class="sel-header">
+        <div class="sel-logo">
+            <span class="f1-badge-lg">F1</span>
+            <div>
+                <div class="sel-title">Race Visualizer</div>
+                <div class="sel-sub">Telemetría en tiempo real · 2020–2025</div>
+            </div>
+        </div>
+    </header>
+
+    <main class="sel-main">
+        <!-- Year picker -->
+        <div class="sel-years">
+            <button class="year-btn active" data-year="2023">2023</button>
+            <button class="year-btn" data-year="2024">2024</button>
+            <button class="year-btn" data-year="2025">2025</button>
+            <button class="year-btn" data-year="2022">2022</button>
+            <button class="year-btn" data-year="2021">2021</button>
+            <button class="year-btn" data-year="2020">2020</button>
+        </div>
+
+        <!-- Race grid -->
+        <div id="race-grid" class="race-grid"></div>
+
+        <!-- Load panel (appears after selecting a race) -->
+        <div id="load-panel" class="load-panel hidden">
+            <div class="load-panel-info">
+                <span class="load-flag" id="load-flag">🏎️</span>
+                <div>
+                    <div class="load-race-name" id="load-race-name">—</div>
+                    <div class="load-race-meta" id="load-race-meta">—</div>
+                </div>
+            </div>
+            <div class="load-panel-actions">
+                <div id="load-status" class="load-status"></div>
+                <button id="btn-load-race" class="btn-launch">
+                    <span id="btn-launch-text">⬇ Cargar en Redis</span>
+                </button>
+                <button id="btn-visualize" class="btn-visualize hidden">
+                    ▶ Visualizar
+                </button>
+            </div>
+        </div>
+    </main>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     SCREEN 2: Visualizer
+════════════════════════════════════════════════════════════════════════════ -->
+<div id="visualizer-screen" class="screen hidden">
+<div class="dashboard">
+
+    <!-- LEFT: Controls -->
+    <aside class="sidebar controls-panel">
+        <div class="sidebar-header">
+            <span class="f1-badge">F1</span>
+            <div>
+                <div class="race-title" id="vis-race-name">GP —</div>
+                <div class="race-sub" id="vis-race-year">—</div>
+            </div>
+        </div>
+
+        <div class="status-row">
+            <span class="status-dot" id="status-dot"></span>
+            <span class="status-text" id="status-text">Conectando…</span>
+        </div>
+
+        <div class="control-group">
+            <button id="btn-back" class="btn-outline">← Cambiar carrera</button>
+        </div>
+        <div class="control-group btn-row">
+            <button id="btn-play"  class="btn-primary">▶ Play</button>
+            <button id="btn-pause" class="btn-secondary">⏸ Pause</button>
+        </div>
+        <div class="control-group">
+            <label for="sel-speed">Velocidad</label>
+            <select id="sel-speed">
+                <option value="1">1× Real</option>
+                <option value="5">5×</option>
+                <option value="10">10×</option>
+                <option value="30">30×</option>
+                <option value="60">60×</option>
+            </select>
+        </div>
+        <div class="control-group">
+            <label for="seek-slider">Posición en carrera</label>
+            <input type="range" id="seek-slider" min="0" max="100" value="0">
+        </div>
+
+        <div class="timer-block">
+            <div class="timer-row">
+                <span class="tlabel">TIEMPO DE CARRERA</span>
+                <span id="time-display" class="tvalue">00:00:00</span>
+            </div>
+            <div class="timer-row">
+                <span class="tlabel">VUELTA LÍDER</span>
+                <span class="tvalue tvalue-sm">
+                    <span id="current-lap">0</span>
+                    <span class="tvalue-sep">/</span>
+                    <span id="total-laps">—</span>
+                </span>
+            </div>
+        </div>
+    </aside>
+
+    <!-- CENTER: Track + events -->
+    <main class="track-area">
+        <svg id="track-svg" viewBox="0 0 1000 1000" preserveAspectRatio="xMidYMid meet"></svg>
+        <div id="event-log"></div>
+    </main>
+
+    <!-- RIGHT: Standings -->
+    <aside class="sidebar standings-panel">
+        <div class="sidebar-header">
+            <h2>Clasificación</h2>
+        </div>
+        <div class="standings-head">
+            <span>POS</span>
+            <span></span>
+            <span>PILOTO</span>
+            <span>VTA</span>
+        </div>
+        <div id="standings-body" class="standings-body"></div>
+    </aside>
+
+</div>
+</div>
+
+<!-- Scripts: races.js must go first (defines F1_CALENDAR, SEASON_DRIVERS, etc.) -->
+<script src="js/races.js"></script>
+<script src="js/renderer.js"></script>
+<script src="js/selector.js"></script>
+<script src="js/websocket.js"></script>
+</body>
 </html>

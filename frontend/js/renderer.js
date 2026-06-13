@@ -1,15 +1,17 @@
-// ── Driver & Team data (2023 season) ─────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════
+// Driver & Team data (2023 season)
+// ═══════════════════════════════════════════════════════════════════════════
 const TEAMS = {
-    red_bull:     { name: "Red Bull Racing",  color: "#3671C6" },
-    mercedes:     { name: "Mercedes",         color: "#00D2BE" },
-    ferrari:      { name: "Ferrari",          color: "#E8002D" },
-    mclaren:      { name: "McLaren",          color: "#FF8000" },
-    aston_martin: { name: "Aston Martin",     color: "#358C75" },
-    alpine:       { name: "Alpine",           color: "#FF87BC" },
-    williams:     { name: "Williams",         color: "#64C4FF" },
-    alphatauri:   { name: "AlphaTauri",       color: "#5E8FAA" },
-    alfa_romeo:   { name: "Alfa Romeo",       color: "#C92D4B" },
-    haas:         { name: "Haas F1 Team",     color: "#B6BABD" },
+    red_bull:     { name: "Red Bull Racing",  color: "#3671C6", textColor: "#fff" },
+    mercedes:     { name: "Mercedes",         color: "#00D2BE", textColor: "#000" },
+    ferrari:      { name: "Ferrari",          color: "#E8002D", textColor: "#fff" },
+    mclaren:      { name: "McLaren",          color: "#FF8000", textColor: "#000" },
+    aston_martin: { name: "Aston Martin",     color: "#358C75", textColor: "#fff" },
+    alpine:       { name: "Alpine",           color: "#FF87BC", textColor: "#000" },
+    williams:     { name: "Williams",         color: "#64C4FF", textColor: "#000" },
+    alphatauri:   { name: "AlphaTauri",       color: "#5E8FAA", textColor: "#fff" },
+    alfa_romeo:   { name: "Alfa Romeo",       color: "#C92D4B", textColor: "#fff" },
+    haas:         { name: "Haas F1 Team",     color: "#B6BABD", textColor: "#000" },
 };
 
 const DRIVERS = {
@@ -35,143 +37,236 @@ const DRIVERS = {
     "27": { abbr: "HUL", name: "Nico Hülkenberg",    team: "haas" },
 };
 
-// ── SVG rendering ─────────────────────────────────────────────────────────────
-const svg = document.getElementById('track-svg');
-const driverNodes = {};
-
-function getDriverColor(driver_id) {
+function driverColor(driver_id) {
     const d = DRIVERS[driver_id];
-    if (!d) return "#FFFFFF";
-    return TEAMS[d.team]?.color || "#FFFFFF";
+    return d ? (TEAMS[d.team]?.color || "#fff") : "#fff";
+}
+function driverAbbr(driver_id) {
+    return DRIVERS[driver_id]?.abbr || driver_id;
 }
 
-function getDriverAbbr(driver_id) {
-    return DRIVERS[driver_id]?.abbr || driver_id;
+// ═══════════════════════════════════════════════════════════════════════════
+// SVG Rendering
+// ═══════════════════════════════════════════════════════════════════════════
+const svg = document.getElementById('track-svg');
+const driverNodes = {};
+let circuitDrawn = false;
+
+function drawCircuit(path) {
+    if (circuitDrawn || !path || path.length < 2) return;
+    circuitDrawn = true;
+
+    const points = path.map(p => `${p.x},${p.y}`).join(' ');
+
+    // Outer track (wide, dark grey = tarmac)
+    const outer = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+    outer.setAttribute("points", points);
+    outer.setAttribute("fill", "none");
+    outer.setAttribute("stroke", "#2a2a2a");
+    outer.setAttribute("stroke-width", "22");
+    outer.setAttribute("stroke-linecap", "round");
+    outer.setAttribute("stroke-linejoin", "round");
+    svg.insertBefore(outer, svg.firstChild);
+
+    // White kerb lines (slightly narrower)
+    const kerbs = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+    kerbs.setAttribute("points", points);
+    kerbs.setAttribute("fill", "none");
+    kerbs.setAttribute("stroke", "#3a3a3a");
+    kerbs.setAttribute("stroke-width", "20");
+    kerbs.setAttribute("stroke-linecap", "round");
+    kerbs.setAttribute("stroke-linejoin", "round");
+    svg.insertBefore(kerbs, svg.firstChild);
+
+    // Racing surface
+    const surface = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+    surface.setAttribute("points", points);
+    surface.setAttribute("fill", "none");
+    surface.setAttribute("stroke", "#1e1e26");
+    surface.setAttribute("stroke-width", "16");
+    surface.setAttribute("stroke-linecap", "round");
+    surface.setAttribute("stroke-linejoin", "round");
+    svg.insertBefore(surface, svg.firstChild);
+
+    // Centerline (dashed white)
+    const center = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+    center.setAttribute("points", points);
+    center.setAttribute("fill", "none");
+    center.setAttribute("stroke", "#ffffff18");
+    center.setAttribute("stroke-width", "1");
+    center.setAttribute("stroke-dasharray", "8 12");
+    svg.insertBefore(center, svg.firstChild);
+
+    // Start/finish line at first point
+    if (path.length > 1) {
+        const sx = path[0].x, sy = path[0].y;
+        const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        line.setAttribute("x1", sx - 12); line.setAttribute("y1", sy);
+        line.setAttribute("x2", sx + 12); line.setAttribute("y2", sy);
+        line.setAttribute("stroke", "#ffffff");
+        line.setAttribute("stroke-width", "3");
+        svg.insertBefore(line, svg.firstChild);
+    }
 }
 
 function renderFrame(positions) {
     positions.forEach(pos => {
-        const color = getDriverColor(pos.driver_id);
-        const abbr  = getDriverAbbr(pos.driver_id);
+        const color = driverColor(pos.driver_id);
+        const abbr  = driverAbbr(pos.driver_id);
         let node = driverNodes[pos.driver_id];
 
         if (!node) {
-            // Glow filter per driver
-            const filterId = `glow-${pos.driver_id}`;
-            const filter = document.createElementNS("http://www.w3.org/2000/svg", "filter");
-            filter.setAttribute("id", filterId);
-            filter.setAttribute("x", "-50%"); filter.setAttribute("y", "-50%");
-            filter.setAttribute("width", "200%"); filter.setAttribute("height", "200%");
-            const feGaussianBlur = document.createElementNS("http://www.w3.org/2000/svg", "feGaussianBlur");
-            feGaussianBlur.setAttribute("stdDeviation", "3");
-            feGaussianBlur.setAttribute("result", "blur");
-            const feMerge = document.createElementNS("http://www.w3.org/2000/svg", "feMerge");
-            ["blur", "SourceGraphic"].forEach(inp => {
-                const n = document.createElementNS("http://www.w3.org/2000/svg", "feMergeNode");
-                if (inp === "blur") n.setAttribute("in", "blur");
-                feMerge.appendChild(n);
-            });
-            filter.appendChild(feGaussianBlur);
-            filter.appendChild(feMerge);
-            svg.appendChild(filter);
+            const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
 
-            // Circle
             const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-            circle.setAttribute("r", 12);
+            circle.setAttribute("r", 9);
             circle.setAttribute("fill", color);
             circle.setAttribute("stroke", "#000");
             circle.setAttribute("stroke-width", 1.5);
-            circle.setAttribute("filter", `url(#${filterId})`);
-            svg.appendChild(circle);
+            g.appendChild(circle);
 
-            // Label background rect
             const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-            rect.setAttribute("width", 30);
-            rect.setAttribute("height", 14);
-            rect.setAttribute("rx", 3);
+            rect.setAttribute("width", 28);
+            rect.setAttribute("height", 13);
+            rect.setAttribute("rx", 2);
             rect.setAttribute("fill", "#000000cc");
-            svg.appendChild(rect);
+            rect.setAttribute("x", 11);
+            rect.setAttribute("y", -7);
+            g.appendChild(rect);
 
-            // Label text
             const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
             text.textContent = abbr;
             text.setAttribute("fill", color);
-            text.setAttribute("font-size", "10");
+            text.setAttribute("font-size", "9");
             text.setAttribute("font-weight", "bold");
-            text.setAttribute("font-family", "monospace");
-            svg.appendChild(text);
+            text.setAttribute("font-family", "Roboto Mono, monospace");
+            text.setAttribute("x", 13);
+            text.setAttribute("y", 4);
+            g.appendChild(text);
 
-            driverNodes[pos.driver_id] = { circle, rect, label: text };
+            svg.appendChild(g);
+            driverNodes[pos.driver_id] = g;
         }
 
-        const { circle, rect, label } = driverNodes[pos.driver_id];
-        circle.setAttribute("cx", pos.x);
-        circle.setAttribute("cy", pos.y);
-        rect.setAttribute("x", pos.x + 14);
-        rect.setAttribute("y", pos.y - 10);
-        label.setAttribute("x", pos.x + 16);
-        label.setAttribute("y", pos.y + 0);
+        driverNodes[pos.driver_id].setAttribute(
+            "transform", `translate(${pos.x.toFixed(1)},${pos.y.toFixed(1)})`
+        );
     });
-
-    updateStandingsTable(positions);
 }
 
-// ── Standings table ───────────────────────────────────────────────────────────
-let standingsInitialized = false;
+// ═══════════════════════════════════════════════════════════════════════════
+// Standings Table
+// ═══════════════════════════════════════════════════════════════════════════
+let standingsBuilt = false;
+const POSITION_ORDER = {};  // {driver_num: {pos, lap}}
 
-function buildStandingsTable() {
-    const container = document.getElementById('standings-body');
-    container.innerHTML = '';
-
-    Object.entries(TEAMS).forEach(([teamId, team]) => {
-        // Team header row
-        const teamRow = document.createElement('div');
-        teamRow.className = 'team-row';
-        teamRow.innerHTML = `
-            <div class="team-color-bar" style="background:${team.color}"></div>
-            <span class="team-name">${team.name}</span>
+function buildStandingsRows() {
+    const body = document.getElementById('standings-body');
+    body.innerHTML = '';
+    // Create rows for all 20 drivers, keyed by driver number
+    for (const [num, d] of Object.entries(DRIVERS)) {
+        const team = TEAMS[d.team];
+        const row = document.createElement('div');
+        row.className = 'standing-row';
+        row.id = `srow-${num}`;
+        row.innerHTML = `
+            <span class="spos" id="spos-${num}">--</span>
+            <span class="sbar" style="background:${team.color}"></span>
+            <span class="sabbr" style="color:${team.color}">${d.abbr}</span>
+            <span class="sname">${d.name}</span>
+            <span class="slap" id="slap-${num}">L0</span>
         `;
-        container.appendChild(teamRow);
-
-        // Driver rows for this team
-        Object.entries(DRIVERS)
-            .filter(([, d]) => d.team === teamId)
-            .forEach(([num, d]) => {
-                const driverRow = document.createElement('div');
-                driverRow.className = 'driver-row';
-                driverRow.id = `standing-${num}`;
-                driverRow.innerHTML = `
-                    <span class="driver-num" style="color:${team.color}">${num}</span>
-                    <span class="driver-abbr" style="color:${team.color}">${d.abbr}</span>
-                    <span class="driver-name">${d.name}</span>
-                    <span class="driver-pos" id="pos-${num}">—</span>
-                `;
-                container.appendChild(driverRow);
-            });
-    });
-
-    standingsInitialized = true;
+        body.appendChild(row);
+    }
+    standingsBuilt = true;
 }
 
-function updateStandingsTable(positions) {
-    if (!standingsInitialized) buildStandingsTable();
-    positions.forEach(pos => {
-        const el = document.getElementById(`pos-${pos.driver_id}`);
-        if (el) {
-            el.textContent = `${pos.x.toFixed(0)},${pos.y.toFixed(0)}`;
-        }
+function updateStandingsTable(racePositions) {
+    if (!standingsBuilt) buildStandingsRows();
+    if (!racePositions || Object.keys(racePositions).length === 0) return;
+
+    const body = document.getElementById('standings-body');
+
+    // Collect rows with their position numbers
+    const rows = [];
+    for (const [dNum, info] of Object.entries(racePositions)) {
+        POSITION_ORDER[dNum] = info;
+    }
+    // Also include drivers not in racePositions yet
+    for (const dNum of Object.keys(DRIVERS)) {
+        if (!POSITION_ORDER[dNum]) POSITION_ORDER[dNum] = { pos: null, lap: 0 };
+    }
+
+    // Sort by position (nulls go to bottom)
+    const sorted = Object.entries(POSITION_ORDER).sort((a, b) => {
+        const pa = a[1].pos ?? 99;
+        const pb = b[1].pos ?? 99;
+        return pa - pb;
+    });
+
+    // Reorder DOM rows and update values
+    sorted.forEach(([dNum, info]) => {
+        const posEl  = document.getElementById(`spos-${dNum}`);
+        const lapEl  = document.getElementById(`slap-${dNum}`);
+        const rowEl  = document.getElementById(`srow-${dNum}`);
+        if (!posEl || !rowEl) return;
+
+        posEl.textContent = info.pos ? `P${info.pos}` : '--';
+        posEl.style.color = info.pos === 1 ? '#ffd700' :
+                            info.pos <= 3  ? '#c0c0c0' : '#888';
+        if (lapEl) lapEl.textContent = info.lap ? `V${info.lap}` : 'V0';
+        body.appendChild(rowEl);  // move to end = re-sort in DOM
     });
 }
 
-// ── Time display ──────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════
+// Event notifications (toasts)
+// ═══════════════════════════════════════════════════════════════════════════
+const EVENT_COLORS = {
+    pit_in:       '#ff9800',
+    pit_out:      '#4caf50',
+    dnf:          '#f44336',
+    track_status: '#ffeb3b',
+};
+
+let toastQueue = Promise.resolve();
+
+function showEvent(event) {
+    const color = EVENT_COLORS[event.type] || '#ffffff';
+    const container = document.getElementById('event-log');
+
+    const toast = document.createElement('div');
+    toast.className = 'event-toast';
+    toast.style.borderLeftColor = color;
+    toast.innerHTML = `<span style="color:${color}">${event.message}</span>`;
+
+    container.appendChild(toast);
+
+    // Trigger animation
+    requestAnimationFrame(() => toast.classList.add('visible'));
+
+    // Auto-remove after 5 seconds
+    setTimeout(() => {
+        toast.classList.remove('visible');
+        toast.classList.add('hiding');
+        setTimeout(() => toast.remove(), 400);
+    }, 5000);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Time display
+// ═══════════════════════════════════════════════════════════════════════════
+let raceStartMs = 0;
+
 function updateTimeDisplay(ms) {
-    const totalSeconds = Math.floor(ms / 1000);
-    const hours   = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const seconds = totalSeconds % 60;
+    const elapsed = Math.max(0, ms - raceStartMs);
+    const totalSec = Math.floor(elapsed / 1000);
+    const h = Math.floor(totalSec / 3600);
+    const m = Math.floor((totalSec % 3600) / 60);
+    const s = totalSec % 60;
     document.getElementById('time-display').innerText =
-        `${String(hours).padStart(2,'0')}:${String(minutes).padStart(2,'0')}:${String(seconds).padStart(2,'0')}`;
+        `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
 }
 
-// Build table immediately on page load
-buildStandingsTable();
+// Initialize
+buildStandingsRows();
