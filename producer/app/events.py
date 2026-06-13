@@ -1,23 +1,35 @@
 import pandas as pd
 import json
 
-DRIVER_ABBR = {
-    "1": "VER", "11": "PER", "44": "HAM", "63": "RUS",
-    "16": "LEC", "55": "SAI", "4":  "NOR", "81": "PIA",
-    "14": "ALO", "18": "STR", "31": "OCO", "10": "GAS",
-    "23": "ALB", "2":  "SAR", "22": "TSU", "21": "DEV",
-    "77": "BOT", "24": "ZHO", "20": "MAG", "27": "HUL",
-}
+
+def _build_abbr_map(session) -> dict[str, str]:
+    """Returns {driver_number_str: abbreviation} from the session's own driver list.
+    Works for any season FastF1 supports. Falls back to driver number if lookup fails.
+    """
+    abbr_map: dict[str, str] = {}
+    try:
+        for d_num in session.drivers:
+            key = str(int(float(d_num)))
+            try:
+                info = session.get_driver(d_num)
+                abbr_map[key] = info.get("Abbreviation", key)
+            except Exception:
+                abbr_map[key] = key
+    except Exception:
+        pass
+    return abbr_map
 
 
-def _driver_abbr(driver_num):
-    return DRIVER_ABBR.get(str(int(float(driver_num))), str(driver_num))
+def _driver_abbr(abbr_map: dict[str, str], driver_num) -> str:
+    key = str(int(float(driver_num)))
+    return abbr_map.get(key, key)
 
 
 def extract_events(session) -> list[dict]:
     """Extracts pit stops, DNFs and safety car events from session data."""
     events = []
     laps = session.laps.copy()
+    abbr_map = _build_abbr_map(session)
 
     # ── Pit in / out ─────────────────────────────────────────────────────────
     for _, lap in laps.iterrows():
@@ -25,7 +37,7 @@ def extract_events(session) -> list[dict]:
             driver_num = lap['DriverNumber']
             if pd.isna(driver_num):
                 continue
-            abbr = _driver_abbr(driver_num)
+            abbr = _driver_abbr(abbr_map, driver_num)
             lap_num = int(lap['LapNumber']) if pd.notna(lap['LapNumber']) else None
 
             if pd.notna(lap.get('PitInTime')):
@@ -57,7 +69,7 @@ def extract_events(session) -> list[dict]:
                     d_num = result.get('DriverNumber')
                     if pd.isna(d_num):
                         continue
-                    abbr = _driver_abbr(d_num)
+                    abbr = _driver_abbr(abbr_map, d_num)
                     d_laps = laps[laps['DriverNumber'] == d_num]
                     if len(d_laps) > 0:
                         last = d_laps.iloc[-1]
