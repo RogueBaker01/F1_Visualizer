@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>F1 Visualizer</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+
+<body>
+    <div class="dashboard">
+        <aside class="sidebar">
+            <h2>Controles</h2>
+            <div class="control-group">
+                <button id="btn-load">Cargar GP Bahréin</button>
+            </div>
+            <div class="control-group">
+                <button id="btn-play">Play</button>
+                <button id="btn-pause">Pause</button>
+            </div>
+            <div class="control-group">
+                <label for="sel-speed">Velocidad:</label>
+                <select id="sel-speed">
+                    <option value="1">1x</option>
+                    <option value="5">5x</option>
+                    <option value="10">10x</option>
+                </select>
+            </div>
+            <div class="timer">
+                Tiempo: <span id="time-display">00:00:00</span>
+            </div>
+        </aside>
+        <main class="track-area">
+            <svg id="track-svg" viewBox="0 0 1000 1000" preserveAspectRatio="xMidYMid meet">
+            </svg>
+        </main>
+    </div>
+    <script src="js/renderer.js"></script>
+    <script src="js/websocket.js"></script>
+</body>
+
+</html>
