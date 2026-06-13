@@ -1,41 +1,79 @@
-// Generar un ID de cliente único para el ConnectionManager del backend
 const clientId = "client_" + Math.random().toString(36).substring(2, 9);
-const ws = new WebSocket(`ws://localhost:8000/websocket/${clientId}`);
+const WS_URL = `ws://localhost:8000/websocket/${clientId}`;
+let ws;
+let raceMinMs = 0;
+let raceMaxMs = 0;
 
-ws.onopen = () => {
-    console.log(`Conectado al servidor WebSocket con ID: ${clientId}`);
-};
+function connect() {
+    ws = new WebSocket(WS_URL);
 
-ws.onmessage = (event) => {
-    const data = JSON.parse(event.data);
+    ws.onopen = () => {
+        console.log(`Conectado con ID: ${clientId}`);
+        send({ action: "load_race", race_id: "2023_bahrain" });
+    };
 
-    if (data.error) {
-        console.error("Error desde el servidor:", data.error, data.details);
-        return;
+    ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        if (data.error) {
+            console.error("Error del servidor:", data.error, data.details);
+            return;
+        }
+
+        if (data.type === "race_info") {
+            raceMinMs = data.min_ms;
+            raceMaxMs = data.max_ms;
+            const slider = document.getElementById('seek-slider');
+            slider.min = raceMinMs;
+            slider.max = raceMaxMs;
+            slider.value = raceMinMs;
+            console.log(`Carrera lista: ${raceMinMs}ms → ${raceMaxMs}ms`);
+        }
+
+        if (data.type === "telemetry") {
+            updateTimeDisplay(data.time_ms);
+            renderFrame(data.positions);
+            const slider = document.getElementById('seek-slider');
+            if (!slider.matches(':active')) {
+                slider.value = data.time_ms;
+            }
+        }
+    };
+
+    ws.onerror = (err) => {
+        console.error("WebSocket error:", err);
+    };
+
+    ws.onclose = () => {
+        console.log("Desconectado del servidor");
+    };
+}
+
+function send(payload) {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify(payload));
+    } else {
+        console.warn("WebSocket no está listo, comando ignorado:", payload);
     }
+}
 
-    if (data.type === "telemetry") {
-        updateTimeDisplay(data.time_ms);
-        renderFrame(data.positions);
-    }
-};
-
-ws.onclose = () => {
-    console.log("Desconectado del servidor");
-};
+connect();
 
 document.getElementById('btn-load').onclick = () => {
-    ws.send(JSON.stringify({ action: "load_race", race_id: "2023_bahrain" }));
+    send({ action: "load_race", race_id: "2023_bahrain" });
 };
 
 document.getElementById('btn-play').onclick = () => {
-    ws.send(JSON.stringify({ action: "play" }));
+    send({ action: "play" });
 };
 
 document.getElementById('btn-pause').onclick = () => {
-    ws.send(JSON.stringify({ action: "pause" }));
+    send({ action: "pause" });
 };
 
 document.getElementById('sel-speed').onchange = (e) => {
-    ws.send(JSON.stringify({ action: "speed", value: parseFloat(e.target.value) }));
+    send({ action: "speed", value: parseFloat(e.target.value) });
+};
+
+document.getElementById('seek-slider').onchange = (e) => {
+    send({ action: "seek", time_ms: parseInt(e.target.value) });
 };

@@ -13,24 +13,18 @@ async def fetch_frame_from_redis(race_id: str, current_time_ms: int) -> list[Dri
     raw = await redis_client.get(exact_key)
 
     if raw is None:
-        pattern = f"race:{race_id}:frame=*"
-        keys = [key async for key in redis_client.scan_iter(pattern)]
-        if not keys:
+        # Use sorted set index for O(log n) nearest-frame lookup instead of scan
+        index_key = f"race:{race_id}:index"
+        results = await redis_client.zrevrangebyscore(
+            index_key,
+            max=current_time_ms,
+            min=0,
+            start=0,
+            num=1,
+        )
+        if not results:
             return []
-
-        timestamps = []
-        for key in keys:
-            try:
-                ts = int(key.split("frame=")[-1])
-                timestamps.append(ts)
-            except ValueError:
-                continue
-
-        valid = [ts for ts in timestamps if ts <= current_time_ms]
-        if not valid:
-            return []
-
-        nearest_ts = max(valid)
+        nearest_ts = results[0]
         raw = await redis_client.get(f"race:{race_id}:frame={nearest_ts}")
 
     if raw is None:
@@ -45,6 +39,17 @@ async def fetch_frame_from_redis(race_id: str, current_time_ms: int) -> list[Dri
         )
         for p in positions_data
     ]
+
+
+async def get_race_bounds(race_id: str) -> dict:
+    """Returns the first and last available timestamps for a race."""
+    index_key = f"race:{race_id}:index"
+    first = await redis_client.zrange(index_key, 0, 0)
+    last = await redis_client.zrange(index_key, -1, -1)
+    return {
+        "min_ms": int(first[0]) if first else 0,
+        "max_ms": int(last[0]) if last else 0,
+    }
 
 
 async def run_simulation_loop(client_id: str):

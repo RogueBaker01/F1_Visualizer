@@ -4,37 +4,62 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>F1 Visualizer</title>
+    <title>F1 Visualizer — GP Bahréin 2023</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Roboto+Mono:wght@500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/styles.css">
 </head>
 
 <body>
     <div class="dashboard">
-        <aside class="sidebar">
-            <h2>Controles</h2>
+
+        <!-- LEFT: Controls -->
+        <aside class="sidebar controls-panel">
+            <div class="sidebar-header">
+                <span class="f1-badge">F1</span>
+                <h2>GP Bahréin 2023</h2>
+            </div>
+
             <div class="control-group">
-                <button id="btn-load">Cargar GP Bahréin</button>
+                <button id="btn-load">⟳ Recargar carrera</button>
+            </div>
+            <div class="control-group btn-row">
+                <button id="btn-play" class="btn-primary">▶ Play</button>
+                <button id="btn-pause" class="btn-secondary">⏸ Pause</button>
             </div>
             <div class="control-group">
-                <button id="btn-play">Play</button>
-                <button id="btn-pause">Pause</button>
-            </div>
-            <div class="control-group">
-                <label for="sel-speed">Velocidad:</label>
+                <label for="sel-speed">Velocidad</label>
                 <select id="sel-speed">
-                    <option value="1">1x</option>
-                    <option value="5">5x</option>
-                    <option value="10">10x</option>
+                    <option value="1">1× — Tiempo real</option>
+                    <option value="5">5×</option>
+                    <option value="10">10×</option>
+                    <option value="30">30×</option>
                 </select>
             </div>
-            <div class="timer">
-                Tiempo: <span id="time-display">00:00:00</span>
+            <div class="control-group">
+                <label for="seek-slider">Posición en carrera</label>
+                <input type="range" id="seek-slider" min="0" max="100" value="0">
+            </div>
+            <div class="timer-display">
+                <span class="timer-label">TIEMPO</span>
+                <span id="time-display">00:00:00</span>
             </div>
         </aside>
+
+        <!-- CENTER: Track -->
         <main class="track-area">
             <svg id="track-svg" viewBox="0 0 1000 1000" preserveAspectRatio="xMidYMid meet">
             </svg>
         </main>
+
+        <!-- RIGHT: Standings -->
+        <aside class="sidebar standings-panel">
+            <div class="sidebar-header">
+                <h2>Equipos &amp; Pilotos</h2>
+            </div>
+            <div id="standings-body" class="standings-body"></div>
+        </aside>
+
     </div>
     <script src="js/renderer.js"></script>
     <script src="js/websocket.js"></script>

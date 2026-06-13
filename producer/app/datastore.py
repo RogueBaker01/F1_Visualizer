@@ -9,6 +9,8 @@ redis_client = redis.Redis(host=REDIS_HOST, port=6379, db=0, decode_responses=Tr
 def load_to_redis(race_id: str, df: pd.DataFrame):
     grouped = df.groupby('Time')
     pipeline = redis_client.pipeline()
+    index_key = f"race:{race_id}:index"
+
     for time_delta, group_df in grouped:
         time_ms = int(time_delta.total_seconds() * 1000)
         positions = []
@@ -21,4 +23,7 @@ def load_to_redis(race_id: str, df: pd.DataFrame):
             })
         redis_key = f"race:{race_id}:frame={time_ms}"
         pipeline.set(redis_key, json.dumps(positions))
+        # Add timestamp to sorted set for O(log n) nearest-frame lookup
+        pipeline.zadd(index_key, {str(time_ms): time_ms})
+
     pipeline.execute()
