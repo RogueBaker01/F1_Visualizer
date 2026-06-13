@@ -1,183 +1,176 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// Driver & Team data (2023 season)
+// renderer.js — SVG rendering + standings + event toasts
+// Uses SEASON_DRIVERS / SEASON_TEAMS from races.js (loaded first)
 // ═══════════════════════════════════════════════════════════════════════════
-const TEAMS = {
-    red_bull:     { name: "Red Bull Racing",  color: "#3671C6", textColor: "#fff" },
-    mercedes:     { name: "Mercedes",         color: "#00D2BE", textColor: "#000" },
-    ferrari:      { name: "Ferrari",          color: "#E8002D", textColor: "#fff" },
-    mclaren:      { name: "McLaren",          color: "#FF8000", textColor: "#000" },
-    aston_martin: { name: "Aston Martin",     color: "#358C75", textColor: "#fff" },
-    alpine:       { name: "Alpine",           color: "#FF87BC", textColor: "#000" },
-    williams:     { name: "Williams",         color: "#64C4FF", textColor: "#000" },
-    alphatauri:   { name: "AlphaTauri",       color: "#5E8FAA", textColor: "#fff" },
-    alfa_romeo:   { name: "Alfa Romeo",       color: "#C92D4B", textColor: "#fff" },
-    haas:         { name: "Haas F1 Team",     color: "#B6BABD", textColor: "#000" },
-};
 
-const DRIVERS = {
-    "1":  { abbr: "VER", name: "Max Verstappen",    team: "red_bull" },
-    "11": { abbr: "PER", name: "Sergio Pérez",       team: "red_bull" },
-    "44": { abbr: "HAM", name: "Lewis Hamilton",     team: "mercedes" },
-    "63": { abbr: "RUS", name: "George Russell",     team: "mercedes" },
-    "16": { abbr: "LEC", name: "Charles Leclerc",    team: "ferrari" },
-    "55": { abbr: "SAI", name: "Carlos Sainz",       team: "ferrari" },
-    "4":  { abbr: "NOR", name: "Lando Norris",       team: "mclaren" },
-    "81": { abbr: "PIA", name: "Oscar Piastri",      team: "mclaren" },
-    "14": { abbr: "ALO", name: "Fernando Alonso",    team: "aston_martin" },
-    "18": { abbr: "STR", name: "Lance Stroll",       team: "aston_martin" },
-    "31": { abbr: "OCO", name: "Esteban Ocon",       team: "alpine" },
-    "10": { abbr: "GAS", name: "Pierre Gasly",       team: "alpine" },
-    "23": { abbr: "ALB", name: "Alexander Albon",    team: "williams" },
-    "2":  { abbr: "SAR", name: "Logan Sargeant",     team: "williams" },
-    "22": { abbr: "TSU", name: "Yuki Tsunoda",       team: "alphatauri" },
-    "21": { abbr: "DEV", name: "Nyck De Vries",      team: "alphatauri" },
-    "77": { abbr: "BOT", name: "Valtteri Bottas",    team: "alfa_romeo" },
-    "24": { abbr: "ZHO", name: "Guanyu Zhou",        team: "alfa_romeo" },
-    "20": { abbr: "MAG", name: "Kevin Magnussen",    team: "haas" },
-    "27": { abbr: "HUL", name: "Nico Hülkenberg",    team: "haas" },
-};
+// Active season data (set by initSeasonData)
+let DRIVERS = {};
+let TEAMS   = {};
 
-function driverColor(driver_id) {
-    const d = DRIVERS[driver_id];
-    return d ? (TEAMS[d.team]?.color || "#fff") : "#fff";
+function initSeasonData(year) {
+    DRIVERS = SEASON_DRIVERS[year] || SEASON_DRIVERS[2023];
+    TEAMS   = SEASON_TEAMS[year]   || SEASON_TEAMS[2023];
+    // Reset SVG and standings
+    resetVisualizer();
 }
-function driverAbbr(driver_id) {
-    return DRIVERS[driver_id]?.abbr || driver_id;
+
+function getDriverColor(id) {
+    const d = DRIVERS[String(id)];
+    return d ? (TEAMS[d.team]?.color || '#fff') : '#fff';
+}
+
+function getDriverAbbr(id) {
+    return DRIVERS[String(id)]?.abbr || String(id);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// SVG Rendering
+// SVG & State
 // ═══════════════════════════════════════════════════════════════════════════
 const svg = document.getElementById('track-svg');
 const driverNodes = {};
 let circuitDrawn = false;
+let raceStartMs  = 0;
+const POSITION_ORDER = {};
 
+function resetVisualizer() {
+    // Clear SVG (keep the element, remove children)
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+    Object.keys(driverNodes).forEach(k => delete driverNodes[k]);
+    Object.keys(POSITION_ORDER).forEach(k => delete POSITION_ORDER[k]);
+    circuitDrawn = false;
+    raceStartMs  = 0;
+    // Clear standings and events
+    document.getElementById('standings-body').innerHTML = '';
+    document.getElementById('event-log').innerHTML = '';
+    document.getElementById('current-lap').textContent = '0';
+    document.getElementById('time-display').textContent = '00:00:00';
+    standingsBuilt = false;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Circuit drawing
+// ═══════════════════════════════════════════════════════════════════════════
 function drawCircuit(path) {
     if (circuitDrawn || !path || path.length < 2) return;
     circuitDrawn = true;
 
-    const points = path.map(p => `${p.x},${p.y}`).join(' ');
+    const pts = path.map(p => `${p.x},${p.y}`).join(' ');
 
-    // Outer track (wide, dark grey = tarmac)
-    const outer = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
-    outer.setAttribute("points", points);
-    outer.setAttribute("fill", "none");
-    outer.setAttribute("stroke", "#2a2a2a");
-    outer.setAttribute("stroke-width", "22");
-    outer.setAttribute("stroke-linecap", "round");
-    outer.setAttribute("stroke-linejoin", "round");
-    svg.insertBefore(outer, svg.firstChild);
+    const layers = [
+        { stroke: '#1a1a28', width: 26, dash: null },   // outer border
+        { stroke: '#252530', width: 22, dash: null },   // tarmac base
+        { stroke: '#1c1c28', width: 18, dash: null },   // racing surface
+        { stroke: '#ffffff10', width: 1,  dash: '6 14' }, // centre dashes
+    ];
 
-    // White kerb lines (slightly narrower)
-    const kerbs = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
-    kerbs.setAttribute("points", points);
-    kerbs.setAttribute("fill", "none");
-    kerbs.setAttribute("stroke", "#3a3a3a");
-    kerbs.setAttribute("stroke-width", "20");
-    kerbs.setAttribute("stroke-linecap", "round");
-    kerbs.setAttribute("stroke-linejoin", "round");
-    svg.insertBefore(kerbs, svg.firstChild);
-
-    // Racing surface
-    const surface = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
-    surface.setAttribute("points", points);
-    surface.setAttribute("fill", "none");
-    surface.setAttribute("stroke", "#1e1e26");
-    surface.setAttribute("stroke-width", "16");
-    surface.setAttribute("stroke-linecap", "round");
-    surface.setAttribute("stroke-linejoin", "round");
-    svg.insertBefore(surface, svg.firstChild);
-
-    // Centerline (dashed white)
-    const center = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
-    center.setAttribute("points", points);
-    center.setAttribute("fill", "none");
-    center.setAttribute("stroke", "#ffffff18");
-    center.setAttribute("stroke-width", "1");
-    center.setAttribute("stroke-dasharray", "8 12");
-    svg.insertBefore(center, svg.firstChild);
+    layers.forEach(({ stroke, width, dash }) => {
+        const pl = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+        pl.setAttribute('points', pts);
+        pl.setAttribute('fill', 'none');
+        pl.setAttribute('stroke', stroke);
+        pl.setAttribute('stroke-width', width);
+        pl.setAttribute('stroke-linecap', 'round');
+        pl.setAttribute('stroke-linejoin', 'round');
+        if (dash) pl.setAttribute('stroke-dasharray', dash);
+        svg.insertBefore(pl, svg.firstChild);
+    });
 
     // Start/finish line at first point
-    if (path.length > 1) {
-        const sx = path[0].x, sy = path[0].y;
-        const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-        line.setAttribute("x1", sx - 12); line.setAttribute("y1", sy);
-        line.setAttribute("x2", sx + 12); line.setAttribute("y2", sy);
-        line.setAttribute("stroke", "#ffffff");
-        line.setAttribute("stroke-width", "3");
-        svg.insertBefore(line, svg.firstChild);
-    }
+    const sx = path[0].x, sy = path[0].y;
+    const nx = path[1].x - sx, ny = path[1].y - sy;
+    const len = Math.sqrt(nx*nx + ny*ny) || 1;
+    // Perpendicular vector
+    const px = -ny/len * 14, py = nx/len * 14;
+    const sfLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    sfLine.setAttribute('x1', sx + px); sfLine.setAttribute('y1', sy + py);
+    sfLine.setAttribute('x2', sx - px); sfLine.setAttribute('y2', sy - py);
+    sfLine.setAttribute('stroke', '#ffffff');
+    sfLine.setAttribute('stroke-width', '3');
+    svg.insertBefore(sfLine, svg.firstChild);
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Driver dots
+// ═══════════════════════════════════════════════════════════════════════════
 function renderFrame(positions) {
     positions.forEach(pos => {
-        const color = driverColor(pos.driver_id);
-        const abbr  = driverAbbr(pos.driver_id);
-        let node = driverNodes[pos.driver_id];
+        const id    = String(pos.driver_id);
+        const color = getDriverColor(id);
+        const abbr  = getDriverAbbr(id);
+        let   node  = driverNodes[id];
 
         if (!node) {
-            const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+            const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
 
-            const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-            circle.setAttribute("r", 9);
-            circle.setAttribute("fill", color);
-            circle.setAttribute("stroke", "#000");
-            circle.setAttribute("stroke-width", 1.5);
+            // Glow halo
+            const halo = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            halo.setAttribute('r', 13);
+            halo.setAttribute('fill', color);
+            halo.setAttribute('opacity', '0.25');
+            g.appendChild(halo);
+
+            // Main circle
+            const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            circle.setAttribute('r', 8);
+            circle.setAttribute('fill', color);
+            circle.setAttribute('stroke', '#000');
+            circle.setAttribute('stroke-width', '1.5');
             g.appendChild(circle);
 
-            const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-            rect.setAttribute("width", 28);
-            rect.setAttribute("height", 13);
-            rect.setAttribute("rx", 2);
-            rect.setAttribute("fill", "#000000cc");
-            rect.setAttribute("x", 11);
-            rect.setAttribute("y", -7);
+            // Label background
+            const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            rect.setAttribute('width', 26);
+            rect.setAttribute('height', 12);
+            rect.setAttribute('rx', 2);
+            rect.setAttribute('fill', '#000000cc');
+            rect.setAttribute('x', 10);
+            rect.setAttribute('y', -6);
             g.appendChild(rect);
 
-            const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+            // Label text
+            const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
             text.textContent = abbr;
-            text.setAttribute("fill", color);
-            text.setAttribute("font-size", "9");
-            text.setAttribute("font-weight", "bold");
-            text.setAttribute("font-family", "Roboto Mono, monospace");
-            text.setAttribute("x", 13);
-            text.setAttribute("y", 4);
+            text.setAttribute('fill', color);
+            text.setAttribute('font-size', '8.5');
+            text.setAttribute('font-weight', 'bold');
+            text.setAttribute('font-family', 'Roboto Mono, monospace');
+            text.setAttribute('x', 12);
+            text.setAttribute('y', 4);
             g.appendChild(text);
 
             svg.appendChild(g);
-            driverNodes[pos.driver_id] = g;
+            driverNodes[id] = g;
         }
 
-        driverNodes[pos.driver_id].setAttribute(
-            "transform", `translate(${pos.x.toFixed(1)},${pos.y.toFixed(1)})`
+        driverNodes[id].setAttribute(
+            'transform', `translate(${pos.x.toFixed(1)},${pos.y.toFixed(1)})`
         );
     });
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Standings Table
+// Race standings
 // ═══════════════════════════════════════════════════════════════════════════
 let standingsBuilt = false;
-const POSITION_ORDER = {};  // {driver_num: {pos, lap}}
 
 function buildStandingsRows() {
     const body = document.getElementById('standings-body');
     body.innerHTML = '';
-    // Create rows for all 20 drivers, keyed by driver number
-    for (const [num, d] of Object.entries(DRIVERS)) {
-        const team = TEAMS[d.team];
-        const row = document.createElement('div');
+    Object.entries(DRIVERS).forEach(([num, d]) => {
+        const team  = TEAMS[d.team] || { color: '#888' };
+        const row   = document.createElement('div');
         row.className = 'standing-row';
-        row.id = `srow-${num}`;
+        row.id        = `srow-${num}`;
+        row.title     = d.name;
         row.innerHTML = `
             <span class="spos" id="spos-${num}">--</span>
             <span class="sbar" style="background:${team.color}"></span>
             <span class="sabbr" style="color:${team.color}">${d.abbr}</span>
             <span class="sname">${d.name}</span>
-            <span class="slap" id="slap-${num}">L0</span>
+            <span class="slap" id="slap-${num}">—</span>
         `;
         body.appendChild(row);
-    }
+    });
     standingsBuilt = true;
 }
 
@@ -185,42 +178,36 @@ function updateStandingsTable(racePositions) {
     if (!standingsBuilt) buildStandingsRows();
     if (!racePositions || Object.keys(racePositions).length === 0) return;
 
-    const body = document.getElementById('standings-body');
-
-    // Collect rows with their position numbers
-    const rows = [];
-    for (const [dNum, info] of Object.entries(racePositions)) {
+    Object.entries(racePositions).forEach(([dNum, info]) => {
         POSITION_ORDER[dNum] = info;
-    }
-    // Also include drivers not in racePositions yet
-    for (const dNum of Object.keys(DRIVERS)) {
+    });
+    // Fill in any missing drivers
+    Object.keys(DRIVERS).forEach(dNum => {
         if (!POSITION_ORDER[dNum]) POSITION_ORDER[dNum] = { pos: null, lap: 0 };
-    }
-
-    // Sort by position (nulls go to bottom)
-    const sorted = Object.entries(POSITION_ORDER).sort((a, b) => {
-        const pa = a[1].pos ?? 99;
-        const pb = b[1].pos ?? 99;
-        return pa - pb;
     });
 
-    // Reorder DOM rows and update values
+    const sorted = Object.entries(POSITION_ORDER).sort(([,a], [,b]) => {
+        return (a.pos ?? 99) - (b.pos ?? 99);
+    });
+
+    const body = document.getElementById('standings-body');
     sorted.forEach(([dNum, info]) => {
-        const posEl  = document.getElementById(`spos-${dNum}`);
-        const lapEl  = document.getElementById(`slap-${dNum}`);
-        const rowEl  = document.getElementById(`srow-${dNum}`);
+        const posEl = document.getElementById(`spos-${dNum}`);
+        const lapEl = document.getElementById(`slap-${dNum}`);
+        const rowEl = document.getElementById(`srow-${dNum}`);
         if (!posEl || !rowEl) return;
 
         posEl.textContent = info.pos ? `P${info.pos}` : '--';
-        posEl.style.color = info.pos === 1 ? '#ffd700' :
-                            info.pos <= 3  ? '#c0c0c0' : '#888';
-        if (lapEl) lapEl.textContent = info.lap ? `V${info.lap}` : 'V0';
-        body.appendChild(rowEl);  // move to end = re-sort in DOM
+        posEl.style.color = info.pos === 1 ? '#ffd700'
+                          : info.pos <= 3  ? '#c0c0c0'
+                          :                  '#666';
+        if (lapEl) lapEl.textContent = info.lap ? `V${info.lap}` : '—';
+        body.appendChild(rowEl);
     });
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Event notifications (toasts)
+// Event toasts
 // ═══════════════════════════════════════════════════════════════════════════
 const EVENT_COLORS = {
     pit_in:       '#ff9800',
@@ -229,44 +216,30 @@ const EVENT_COLORS = {
     track_status: '#ffeb3b',
 };
 
-let toastQueue = Promise.resolve();
-
 function showEvent(event) {
-    const color = EVENT_COLORS[event.type] || '#ffffff';
-    const container = document.getElementById('event-log');
-
+    const color = EVENT_COLORS[event.type] || '#ccc';
+    const log   = document.getElementById('event-log');
     const toast = document.createElement('div');
     toast.className = 'event-toast';
     toast.style.borderLeftColor = color;
     toast.innerHTML = `<span style="color:${color}">${event.message}</span>`;
-
-    container.appendChild(toast);
-
-    // Trigger animation
+    log.appendChild(toast);
     requestAnimationFrame(() => toast.classList.add('visible'));
-
-    // Auto-remove after 5 seconds
     setTimeout(() => {
         toast.classList.remove('visible');
         toast.classList.add('hiding');
         setTimeout(() => toast.remove(), 400);
-    }, 5000);
+    }, 5500);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Time display
 // ═══════════════════════════════════════════════════════════════════════════
-let raceStartMs = 0;
-
 function updateTimeDisplay(ms) {
     const elapsed = Math.max(0, ms - raceStartMs);
-    const totalSec = Math.floor(elapsed / 1000);
-    const h = Math.floor(totalSec / 3600);
-    const m = Math.floor((totalSec % 3600) / 60);
-    const s = totalSec % 60;
-    document.getElementById('time-display').innerText =
-        `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+    const s = Math.floor(elapsed / 1000);
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    document.getElementById('time-display').textContent =
+        `${String(h).padStart(2,'0')}:${String(m % 60).padStart(2,'0')}:${String(s % 60).padStart(2,'0')}`;
 }
-
-// Initialize
-buildStandingsRows();
