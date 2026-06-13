@@ -8,8 +8,8 @@ def normalize_coordinates(df:pd.DataFrame) -> pd.DataFrame:
     y_range = y_max - y_min
     max_range = max(x_range,y_range)
 
-    df['norm_x'] = ((df['X'] - x_min)/max_range)*1000
-    df['norm_y'] = 1000 - (((df['Y'] - y_min)/max_range)*1000)
+    df['x_norm'] = ((df['X'] - x_min)/max_range)*1000
+    df['y_norm'] = 1000 - (((df['Y'] - y_min)/max_range)*1000)
     
 
     return df
