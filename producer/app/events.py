@@ -33,7 +33,7 @@ def extract_events(session) -> list[dict]:
                 events.append({
                     'time_ms': t_ms, 'type': 'pit_in',
                     'driver': abbr, 'lap': lap_num,
-                    'message': f"🔧 {abbr} ENTRA A PITS (V.{lap_num})"
+                    'message': f"PIT IN  {abbr}  Vuelta {lap_num}"
                 })
 
             if pd.notna(lap.get('PitOutTime')):
@@ -41,7 +41,7 @@ def extract_events(session) -> list[dict]:
                 events.append({
                     'time_ms': t_ms, 'type': 'pit_out',
                     'driver': abbr, 'lap': lap_num,
-                    'message': f"🔧 {abbr} SALE DE PITS (V.{lap_num})"
+                    'message': f"PIT OUT  {abbr}  Vuelta {lap_num}"
                 })
         except Exception:
             continue
@@ -66,7 +66,7 @@ def extract_events(session) -> list[dict]:
                             events.append({
                                 'time_ms': t_ms, 'type': 'dnf',
                                 'driver': abbr, 'reason': status,
-                                'message': f"❌ {abbr} ABANDONA — {status}"
+                                'message': f"ABANDONA  {abbr}  {status}"
                             })
     except Exception as e:
         print(f"[events] No se pudo extraer DNFs: {e}")
@@ -76,12 +76,12 @@ def extract_events(session) -> list[dict]:
         ts_data = session.track_status_data
         if ts_data is not None and len(ts_data) > 0:
             sc_messages = {
-                '2': '🟡 BANDERA AMARILLA',
-                '4': '🚗 SAFETY CAR DESPLEGADO',
-                '5': '🔴 BANDERA ROJA',
-                '6': '🟡 VIRTUAL SAFETY CAR',
-                '7': '🟡 VSC FINALIZANDO',
-                '1': '🟢 PISTA DESPEJADA',
+                '2': 'BANDERA AMARILLA',
+                '4': 'SAFETY CAR',
+                '5': 'BANDERA ROJA',
+                '6': 'VIRTUAL SAFETY CAR',
+                '7': 'VSC FINALIZANDO',
+                '1': 'PISTA DESPEJADA',
             }
             prev_status = '1'
             for _, row in ts_data.iterrows():

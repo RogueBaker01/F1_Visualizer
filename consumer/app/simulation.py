@@ -50,13 +50,23 @@ async def fetch_frame_from_redis(race_id: str, current_time_ms: int) -> list[Dri
 # ── Race positions ────────────────────────────────────────────────────────────
 
 async def get_race_positions(race_id: str, current_time_ms: int) -> dict:
-    """Returns {driver_num: {pos, lap}} from nearest position snapshot."""
+    """Returns {driver_num: {pos, lap}} from nearest position snapshot.
+    Falls forward to the first snapshot if none exists before current_time.
+    """
+    index_key = f"race:{race_id}:snap:index"
+
+    # Look backwards first (most common case)
     results = await redis_client.zrevrangebyscore(
-        f"race:{race_id}:snap:index",
-        max=current_time_ms, min=0, start=0, num=1,
+        index_key, max=current_time_ms, min=0, start=0, num=1,
     )
+
+    # If nothing behind us, grab the first snapshot available (fall-forward)
+    if not results:
+        results = await redis_client.zrange(index_key, 0, 0)
+
     if not results:
         return {}
+
     raw = await redis_client.get(f"race:{race_id}:snap:{results[0]}")
     return json.loads(raw) if raw else {}
 

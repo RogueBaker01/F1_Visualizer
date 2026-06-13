@@ -221,7 +221,16 @@ body {
 }
 
 .rc-flag {
-    font-size: 22px;
+    display: inline-block;
+    font-size: 9px;
+    font-weight: 800;
+    font-family: 'Roboto Mono', monospace;
+    letter-spacing: 0.08em;
+    color: #aaa;
+    background: #1a1a2a;
+    border: 1px solid #2a2a3a;
+    border-radius: 3px;
+    padding: 2px 5px;
     margin-bottom: 6px;
 }
 

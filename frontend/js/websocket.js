@@ -47,11 +47,13 @@ function connectWebSocket(raceId) {
             if (data.race_positions && Object.keys(data.race_positions).length > 0) {
                 updateStandingsTable(data.race_positions);
 
-                // Update leader lap
-                const p1 = Object.entries(data.race_positions)
-                    .find(([, info]) => info.pos === 1);
-                if (p1) {
-                    document.getElementById('current-lap').textContent = p1[1].lap ?? 0;
+                // Use max lap among all drivers (robust against pos=null entries)
+                let maxLap = 0;
+                Object.values(data.race_positions).forEach(info => {
+                    if (info.lap && info.lap > maxLap) maxLap = info.lap;
+                });
+                if (maxLap > 0) {
+                    document.getElementById('current-lap').textContent = maxLap;
                 }
             }
 

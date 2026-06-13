@@ -7,11 +7,10 @@ services:
   producer:
     build:
       context: ./producer
+    ports:
+      - "8001:8001"
     environment:
       - REDIS_HOST=redis
-      - RACE_YEAR=${RACE_YEAR:-2023}
-      - RACE_ROUND=${RACE_ROUND:-1}
-      - RACE_ID=${RACE_ID:-2023_r1}
     depends_on:
       - redis
     volumes:

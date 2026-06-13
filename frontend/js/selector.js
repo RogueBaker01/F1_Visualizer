@@ -1,20 +1,20 @@
 // ═══════════════════════════════════════════════════════════════════════════
 // selector.js — Race selector screen logic
-// Reads F1_CALENDAR from races.js, calls /races to check what's in Redis,
-// and can trigger the producer via docker exec to load a new race.
 // ═══════════════════════════════════════════════════════════════════════════
 
-const API = "http://localhost:8000";
+const CONSUMER_API  = "http://localhost:8000";
+const PRODUCER_API  = "http://localhost:8001";
 
-let selectedYear  = 2023;
-let selectedRound = null;
+let selectedYear   = 2023;
+let selectedRound  = null;
 let selectedRaceId = null;
-let loadedRaces = new Set();   // race_ids already in Redis
+let loadedRaces    = new Set();   // race_ids already in Redis
+let pollingTimer   = null;        // setInterval for polling load status
 
 // ── Fetch what's already loaded in Redis ────────────────────────────────────
 async function fetchLoadedRaces() {
     try {
-        const res = await fetch(`${API}/races`);
+        const res  = await fetch(`${CONSUMER_API}/races`);
         const data = await res.json();
         loadedRaces = new Set(data.races.map(r => r.race_id));
     } catch {
@@ -22,20 +22,20 @@ async function fetchLoadedRaces() {
     }
 }
 
-// ── Build the race grid for a given year ────────────────────────────────────
+// ── Build race grid ──────────────────────────────────────────────────────────
 function buildRaceGrid(year) {
-    const grid = document.getElementById('race-grid');
+    const grid  = document.getElementById('race-grid');
     grid.innerHTML = '';
     const races = F1_CALENDAR[year] || [];
 
     races.forEach(race => {
-        const raceId = `${year}_r${race.round}`;
+        const raceId   = `${year}_r${race.round}`;
         const isLoaded = loadedRaces.has(raceId);
 
         const card = document.createElement('div');
-        card.className = `race-card ${isLoaded ? 'loaded' : ''}`;
-        card.dataset.round = race.round;
-        card.dataset.raceId = raceId;
+        card.className       = `race-card ${isLoaded ? 'loaded' : ''}`;
+        card.dataset.round   = race.round;
+        card.dataset.raceId  = raceId;
 
         card.innerHTML = `
             <div class="rc-flag">${race.country}</div>
@@ -44,17 +44,15 @@ function buildRaceGrid(year) {
             <div class="rc-circuit">${race.circuit}</div>
             ${isLoaded ? '<div class="rc-loaded-badge">✓ En Redis</div>' : ''}
         `;
-
         card.addEventListener('click', () => selectRace(year, race, raceId));
         grid.appendChild(card);
     });
 }
 
-// ── Select a race ───────────────────────────────────────────────────────────
+// ── Select a race ────────────────────────────────────────────────────────────
 function selectRace(year, race, raceId) {
-    // Deselect previous
+    stopPolling();
     document.querySelectorAll('.race-card').forEach(c => c.classList.remove('selected'));
-    // Select current
     const card = document.querySelector(`[data-race-id="${raceId}"]`);
     if (card) card.classList.add('selected');
 
@@ -62,99 +60,164 @@ function selectRace(year, race, raceId) {
     selectedRound  = race.round;
     selectedRaceId = raceId;
 
-    // Show load panel
-    const panel = document.getElementById('load-panel');
+    const panel   = document.getElementById('load-panel');
     panel.classList.remove('hidden');
     document.getElementById('load-flag').textContent      = race.country;
     document.getElementById('load-race-name').textContent = race.name;
-    document.getElementById('load-race-meta').textContent = `${year} · Temporada F1`;
+    document.getElementById('load-race-meta').textContent = `${year} · F1 World Championship`;
 
-    const btnVis  = document.getElementById('btn-visualize');
-    const btnLoad = document.getElementById('btn-load-race');
-    const status  = document.getElementById('load-status');
+    refreshPanelState(raceId);
+}
+
+// ── Refresh load-panel buttons/status ────────────────────────────────────────
+function refreshPanelState(raceId) {
+    const btnVis   = document.getElementById('btn-visualize');
+    const btnLoad  = document.getElementById('btn-load-race');
+    const btnText  = document.getElementById('btn-launch-text');
+    const status   = document.getElementById('load-status');
 
     if (loadedRaces.has(raceId)) {
-        status.textContent = '✓ Datos disponibles en Redis';
-        status.className   = 'load-status ok';
+        setStatus(status, 'ok', 'Datos disponibles en Redis');
         btnVis.classList.remove('hidden');
-        btnLoad.querySelector('#btn-launch-text').textContent = '⟳ Recargar en Redis';
+        btnText.textContent = 'Recargar datos';
     } else {
-        status.textContent = '⚠ No cargado — selecciona "Cargar en Redis"';
-        status.className   = 'load-status warn';
+        setStatus(status, 'warn', 'No cargado aun');
         btnVis.classList.add('hidden');
-        btnLoad.querySelector('#btn-launch-text').textContent = '⬇ Cargar en Redis';
+        btnText.textContent = 'Cargar en Redis';
     }
 }
 
-// ── Load race into Redis (shows instructions since we can't exec docker) ────
+function setStatus(el, cls, html) {
+    el.className = `load-status ${cls}`;
+    el.innerHTML = html;
+}
+
+// ── Trigger load via Producer API ────────────────────────────────────────────
 document.getElementById('btn-load-race').addEventListener('click', async () => {
     if (!selectedRaceId) return;
 
     const status  = document.getElementById('load-status');
-    const btnLoad = document.getElementById('btn-load-race');
     const btnVis  = document.getElementById('btn-visualize');
     const btnText = document.getElementById('btn-launch-text');
+    const btnLoad = document.getElementById('btn-load-race');
 
-    // Check if already loaded
-    await fetchLoadedRaces();
-    if (loadedRaces.has(selectedRaceId)) {
-        status.textContent = '✓ Ya disponible — abriendo visualizador…';
-        status.className   = 'load-status ok';
-        btnVis.classList.remove('hidden');
-        return;
-    }
+    btnLoad.disabled    = true;
+    btnText.textContent = 'Iniciando...';
+    setStatus(status, 'info', 'Conectando con el producer...');
 
-    // Show docker command instructions
-    status.innerHTML = `
-        <div class="docker-hint">
-            <b>Ejecuta este comando en tu terminal:</b><br>
-            <code>docker compose run --rm -e RACE_YEAR=${selectedYear} -e RACE_ROUND=${selectedRound} -e RACE_ID=${selectedRaceId} producer</code>
-            <br><small>Esto descargará los datos de F1 y los cargará en Redis (~2-5 min).</small>
-        </div>
-    `;
-    status.className = 'load-status info';
-    btnText.textContent = '⟳ Verificar si ya cargó';
-    btnLoad.onclick = async () => {
-        await fetchLoadedRaces();
-        if (loadedRaces.has(selectedRaceId)) {
-            status.textContent = '✓ Cargado correctamente';
-            status.className   = 'load-status ok';
+    try {
+        const res  = await fetch(
+            `${PRODUCER_API}/load-race?year=${selectedYear}&round=${selectedRound}&race_id=${selectedRaceId}`,
+            { method: 'POST' }
+        );
+        const data = await res.json();
+
+        if (data.status === 'done') {
+            // Already loaded
+            loadedRaces.add(selectedRaceId);
+            markCardLoaded(selectedRaceId);
+            setStatus(status, 'ok', data.message);
             btnVis.classList.remove('hidden');
-            const card = document.querySelector(`[data-race-id="${selectedRaceId}"]`);
-            if (card) { card.classList.add('loaded'); }
+            btnLoad.disabled = false;
+            btnText.textContent = 'Recargar datos';
+        } else if (data.status === 'loading') {
+            setStatus(status, 'info', 'Descargando datos de F1... esto puede tardar 3-5 min');
+            btnText.textContent = 'Cargando...';
+            startPolling(selectedRaceId);
         } else {
-            status.textContent = '⏳ Aún cargando… vuelve a verificar en unos minutos';
-            status.className   = 'load-status warn';
+            setStatus(status, 'warn', 'Error: ' + data.message);
+            btnLoad.disabled = false;
+            btnText.textContent = 'Reintentar';
         }
-    };
+    } catch (err) {
+        setStatus(status, 'warn',
+            `No se pudo conectar al producer (${PRODUCER_API}). El servicio no esta corriendo.`
+        );
+        btnLoad.disabled = false;
+        btnText.textContent = 'Reintentar';
+    }
 });
 
-// ── Launch visualizer ────────────────────────────────────────────────────────
+// ── Poll for completion ───────────────────────────────────────────────────────
+function startPolling(raceId) {
+    stopPolling();
+    pollingTimer = setInterval(() => pollStatus(raceId), 4000);
+}
+
+function stopPolling() {
+    if (pollingTimer) { clearInterval(pollingTimer); pollingTimer = null; }
+}
+
+async function pollStatus(raceId) {
+    if (raceId !== selectedRaceId) { stopPolling(); return; }
+
+    try {
+        const res  = await fetch(`${PRODUCER_API}/status/${raceId}`);
+        const data = await res.json();
+
+        const status  = document.getElementById('load-status');
+        const btnVis  = document.getElementById('btn-visualize');
+        const btnLoad = document.getElementById('btn-load-race');
+        const btnText = document.getElementById('btn-launch-text');
+
+        if (data.status === 'done') {
+            stopPolling();
+            loadedRaces.add(raceId);
+            markCardLoaded(raceId);
+            setStatus(status, 'ok', data.message);
+            btnVis.classList.remove('hidden');
+            btnLoad.disabled = false;
+            btnText.textContent = 'Recargar datos';
+        } else if (data.status === 'error') {
+            stopPolling();
+            setStatus(status, 'warn', 'Error: ' + data.message);
+            btnLoad.disabled = false;
+            btnText.textContent = 'Reintentar';
+        } else if (data.status === 'loading') {
+            const dots = (Date.now() % 1200 < 400) ? '.' : (Date.now() % 1200 < 800) ? '..' : '...';
+            setStatus(status, 'info', `Descargando... ${data.message}${dots}`);
+        }
+    } catch {
+        // Network blip — keep polling
+    }
+}
+
+function markCardLoaded(raceId) {
+    const card = document.querySelector(`[data-race-id="${raceId}"]`);
+    if (!card) return;
+    card.classList.add('loaded');
+    if (!card.querySelector('.rc-loaded-badge')) {
+        const badge = document.createElement('div');
+        badge.className   = 'rc-loaded-badge';
+        badge.textContent = 'En Redis';
+        card.appendChild(badge);
+    }
+}
+
+// ── Launch visualizer ─────────────────────────────────────────────────────────
 document.getElementById('btn-visualize').addEventListener('click', () => {
     if (!selectedRaceId) return;
     launchVisualizer(selectedYear, selectedRound, selectedRaceId);
 });
 
 function launchVisualizer(year, round, raceId) {
-    // Update visualizer header
     const race = (F1_CALENDAR[year] || []).find(r => r.round === round);
-    document.getElementById('vis-race-name').textContent = race ? `${race.country} ${race.name}` : raceId;
-    document.getElementById('vis-race-year').textContent = `${year} · Temporada F1`;
+    document.getElementById('vis-race-name').textContent = race
+        ? `${race.country} ${race.name}` : raceId;
+    document.getElementById('vis-race-year').textContent = `${year} · F1 World Championship`;
     document.getElementById('total-laps').textContent    = '…';
 
-    // Initialize renderer with correct season data
     initSeasonData(year);
 
-    // Switch screens
     document.getElementById('selector-screen').classList.add('hidden');
     document.getElementById('visualizer-screen').classList.remove('hidden');
 
-    // Connect WebSocket and load race
     connectWebSocket(raceId);
 }
 
 // ── Back button ──────────────────────────────────────────────────────────────
 document.getElementById('btn-back').addEventListener('click', () => {
+    stopPolling();
     disconnectWebSocket();
     document.getElementById('visualizer-screen').classList.add('hidden');
     document.getElementById('selector-screen').classList.remove('hidden');
@@ -164,6 +227,7 @@ document.getElementById('btn-back').addEventListener('click', () => {
 // ── Year buttons ─────────────────────────────────────────────────────────────
 document.querySelectorAll('.year-btn').forEach(btn => {
     btn.addEventListener('click', () => {
+        stopPolling();
         document.querySelectorAll('.year-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         selectedYear = parseInt(btn.dataset.year);
